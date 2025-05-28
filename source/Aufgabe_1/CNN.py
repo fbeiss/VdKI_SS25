@@ -5,22 +5,42 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 import os
 
+
+# current working directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
-# ░▒ DEVICE ▒░
+# checks if cuda is available and sets the device accordingly (either gpu or cpu)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
-# ░▒ DATASET & TRANSFORM ▒░
+
+# Datenaugmentation und Normalisierung:
+# Resize: Größe der Bilder auf 224x224 Pixel anpassen
+# ToTensor: Konvertiert PIL-Bilder in PyTorch-Tensoren ([0, 1] Bereich)
+# Normalize: Normalisiert die Bilder mit den gegebenen Mittelwerten und Standardabweichungen
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Resize((224, 224)),                   # Resize auf 224x224 Pixel
+    transforms.RandomHorizontalFlip(p=0.5),            # Horizontal flip
+    transforms.RandomVerticalFlip(p=0.2),              # Vertikal flip (optional)
+    transforms.RandomRotation(degrees=30),             # Rotation bis ±30 Grad
+    transforms.ColorJitter(                            # Farbveränderungen
+        brightness=0.3, contrast=0.3, saturation=0.3, hue=0.1),
+    transforms.RandomGrayscale(p=0.1),                 # 10% Graustufen
+    transforms.ToTensor(),  
+    transforms.Normalize(mean=[0.5527, 0.5293, 0.4742], std=[0.2510, 0.2463, 0.2474])
 ])
+
+print("Transformations:", transform)
 
 dataset = datasets.ImageFolder("../../data/train", transform=transform)
 
-# Split: 80% train, 20% val
+print(f"Dataset size: {len(dataset)} images")
+print("Classes:", dataset.classes)
+print("Class indices:", dataset.class_to_idx)
+print("Sample image shape:", dataset[0][0].shape)  # Shape of the first image tensor
+print("Sample label:", dataset[0][1])  # Label of the first image
+
+
 train_size = int(0.8 * len(dataset))
 val_size   = len(dataset) - train_size
 train_data, val_data = random_split(dataset, [train_size, val_size])
@@ -28,7 +48,7 @@ train_data, val_data = random_split(dataset, [train_size, val_size])
 train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
 val_loader   = DataLoader(val_data,   batch_size=32)
 
-# ░▒ SIMPLE CNN ▒░
+
 class SimpleCNN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -49,13 +69,13 @@ class SimpleCNN(nn.Module):
 
 model = SimpleCNN().to(device)
 
-# ░▒ TRAINING SETUP ▒░
+
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 epochs = 10
 best_acc = 0
 
-# ░▒ TRAINING LOOP ▒░
+
 for epoch in range(epochs):
     model.train()
     total, correct = 0, 0
@@ -91,4 +111,4 @@ for epoch in range(epochs):
         best_acc = val_acc
         torch.save(model.state_dict(), "best_model.pth")
 
-print("Fertig. Bestes Modell gespeichert unter 'best_model.pth'")
+print(f"Fertig. Best Validation Accuracy: {best_acc:.3f}")
