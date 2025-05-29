@@ -1,0 +1,81 @@
+{
+    "hyperparameters": {
+        "resize": [
+            224,
+            224
+        ],
+        "augmentation": {
+            "horizontal_flip": 0.5,
+            "vertical_flip": 0.2,
+            "rotation": 30,
+            "color_jitter": {
+                "brightness": 0.3,
+                "contrast": 0.3,
+                "saturation": 0.3,
+                "hue": 0.1
+            },
+            "grayscale": 0.1
+        },
+        "normalization": {
+            "mean": [
+                0.5131,
+                0.4867,
+                0.4275
+            ],
+            "std": [
+                0.229,
+                0.224,
+                0.225
+            ]
+        },
+        "epochs": 15,
+        "learning_rate": 0.001,
+        "batch_size": 32,
+        "cnn_model": "SimpleCNN(\n  (conv): Sequential(\n    (0): Conv2d(3, 16, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))\n    (1): ReLU()\n    (2): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)\n    (3): Conv2d(16, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))\n    (4): ReLU()\n    (5): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)\n    (6): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))\n    (7): ReLU()\n    (8): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)\n  )\n  (fc): Sequential(\n    (0): Flatten(start_dim=1, end_dim=-1)\n    (1): Linear(in_features=50176, out_features=128, bias=True)\n    (2): ReLU()\n    (3): Linear(in_features=128, out_features=2, bias=True)\n  )\n)"
+    },
+    "results": {
+        "dataset_size": 3248,
+        "best_validation_accuracy": 0.9076923076923077,
+        "train_losses": [
+            0.5448699593544006,
+            0.07248694449663162,
+            0.017922522500157356,
+            0.10749150067567825,
+            0.05260807275772095,
+            0.1964649111032486,
+            0.048530492931604385,
+            0.05897238478064537,
+            0.047524672001600266,
+            0.05250704661011696,
+            0.00069802301004529,
+            0.0007909319247119129
+        ],
+        "train_accuracies": [
+            0.7994611239414935,
+            0.8602771362586605,
+            0.9107005388760585,
+            0.9380292532717475,
+            0.9572748267898383,
+            0.9753656658968437,
+            0.9838337182448037,
+            0.985373364126251,
+            0.9865280985373364,
+            0.9926866820631255,
+            0.9923017705927637,
+            0.9934565050038491
+        ],
+        "classification_report": "              precision    recall  f1-score   support\n\n   no rabbit       0.86      0.71      0.78       149\n      rabbit       0.92      0.97      0.94       501\n\n    accuracy                           0.91       650\n   macro avg       0.89      0.84      0.86       650\nweighted avg       0.91      0.91      0.90       650\n",
+        "confusion_matrix": [
+            [
+                106,
+                43
+            ],
+            [
+                17,
+                484
+            ]
+        ],
+        "test_accuracy": 0.9076923076923077,
+        "test_loss": 0.42655940389349345
+    }
+}
