@@ -1,0 +1,1 @@
+from interface_class import CNNInterface

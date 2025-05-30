@@ -1,32 +1,19 @@
+import os
+import json
+import datetime
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-import os
-import seaborn as sns
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 import matplotlib.pyplot as plt
-import json
-import datetime
+import seaborn as sns
+import re
 
-current_date = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-doc_dir = os.path.join(BASE_DIR, "..","..","documentation","Aufgabe_1","CNN" , f"training_results_{current_date}")
-os.chdir(BASE_DIR)
-
-
-# Sicherstellen, dass das Dokumentationsverzeichnis existier
-if not os.path.exists(doc_dir):
-    print(f"Creating documentation directory: {doc_dir}")
-    os.makedirs(doc_dir)
-
-print(f"Current working directory: {os.getcwd()}")
-
-
-# Parameter für Dokumentation:
-resize = (224, 224) 
-augmentation = {
+RESIZE = (224, 224)  # Resize images to 224x224 pixels
+AUGMENTATION = {
     "horizontal_flip": 0.5,
     "vertical_flip": 0.2,
     "rotation": 30,
@@ -38,262 +25,269 @@ augmentation = {
     },
     "grayscale": 0.1
 }
-normlization = {
+NORMLIZATION = {
     "mean": [0.5131, 0.4867, 0.4275],
     "std": [0.229, 0.224, 0.225]
 }
-epochs = 12
-learning_rate = 1e-3
-batch_size = 32
+EPOCHS = 12
+LEARNING_RATE = 1e-3
+BATCH_SIZE = 32
 
+current_date = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+doc_dir = os.path.join(base_dir, "..", "..", "documentation", "Aufgabe_1", "CNN", f"training_results_{current_date}")
+os.makedirs(doc_dir, exist_ok=True)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+from interface_class import CNNInterface
+
+
+def get_transforms():
+    aug = AUGMENTATION
+    norm = NORMLIZATION
+
+    train_transform = transforms.Compose([
+        transforms.Resize(RESIZE),
+        transforms.RandomHorizontalFlip(p=aug["horizontal_flip"]),
+        transforms.RandomVerticalFlip(p=aug["vertical_flip"]),
+        transforms.RandomRotation(degrees=aug["rotation"]),
+        transforms.ColorJitter(
+            brightness=aug["color_jitter"]["brightness"],
+            contrast=aug["color_jitter"]["contrast"],
+            saturation=aug["color_jitter"]["saturation"],
+            hue=aug["color_jitter"]["hue"]
+        ),
+        transforms.RandomGrayscale(p=aug["grayscale"]),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=norm["mean"], std=norm["std"])
+    ])
+
+    val_test_transform = transforms.Compose([
+        transforms.Resize(RESIZE),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=norm["mean"], std=norm["std"])
+    ])
+
+    return train_transform, val_test_transform
 
 class EarlyStopper:
-    def __init__(self, patience=1, delta=0):
+    def __init__(self, patience=5, delta=0.0):
         self.patience = patience
         self.min_delta = delta
         self.counter = 0
         self.min_validation_loss = float('inf')
 
     def early_stop(self, validation_loss):
-        if validation_loss < self.min_validation_loss:
+        if validation_loss < self.min_validation_loss - self.min_delta:
             self.min_validation_loss = validation_loss
             self.counter = 0
-        elif validation_loss > (self.min_validation_loss + self.min_delta):
+        else:
             self.counter += 1
-            print(f"Early stopping counter: {self.counter}/{self.patience}")
-            if self.counter >= self.patience:
-                print("Early stopping triggered")
-                return True
-        return False
+        return self.counter >= self.patience
 
 
-
-# current working directory
-
-
-# checks if cuda is available and sets the device accordingly (either gpu or cpu)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
-
-# Datenaugmentation und Normalisierung:
-# Resize: Größe der Bilder auf 224x224 Pixel anpassen
-# RandomHorizontalFlip: Zufälliges horizontales Spiegeln der Bilder (50% Wahrscheinlichkeit)
-# RandomVerticalFlip: Zufälliges vertikales Spiegeln der Bilder (20% Wahrscheinlichkeit)
-# RandomRotation: Zufällige Rotation der Bilder um ±30 Grad
-# ColorJitter: Zufällige Anpassung von Helligkeit, Kontrast, Sättigung und Farbton
-# RandomGrayscale: 10% der Bilder in Graustufen umwandeln
-# ToTensor: Konvertiert PIL-Bilder in PyTorch-Tensoren ([0, 1] Bereich)
-# Normalize: Normalisiert die Bilder mit den gegebenen Mittelwerten und Standardabweichungen
-train_transform = transforms.Compose([
-    transforms.Resize(resize),  # Resize auf 224x224 Pixel
-    transforms.RandomHorizontalFlip(p=augmentation["horizontal_flip"]),  # Horizontal flip
-    transforms.RandomVerticalFlip(p=augmentation["vertical_flip"]),      # Vertikal flip (optional)
-    transforms.RandomRotation(degrees=augmentation["rotation"]),         # Rotation bis ±30 Grad
-    transforms.ColorJitter(
-        brightness=augmentation["color_jitter"]["brightness"],
-        contrast=augmentation["color_jitter"]["contrast"],
-        saturation=augmentation["color_jitter"]["saturation"],
-        hue=augmentation["color_jitter"]["hue"]
-    ),
-    transforms.RandomGrayscale(p=augmentation["grayscale"]),             # 10% Graustufen
-    transforms.ToTensor(),
-    transforms.Normalize(mean=normlization["mean"], std=normlization["std"])
-])
-
-val_transform = transforms.Compose([
-    transforms.Resize(resize),  # Resize auf 224x224 Pixel
-    transforms.ToTensor(),
-    transforms.Normalize(mean=normlization["mean"], std=normlization["std"])
-])
-
-
-dataset = datasets.ImageFolder("../../data/train", transform=train_transform)
-
-print(f"Dataset size: {len(dataset)} images")
-print("Classes:", dataset.classes)
-
-# Aufteilung des Datensatzes in Trainings- und Validierungsdaten (bis es Val/Test daten gibt)
-train_size = int(0.8 * len(dataset))
-val_size   = len(dataset) - train_size
-train_data, val_data = random_split(dataset, [train_size, val_size])
-
-val_data.dataset.transform = val_transform  # Setze den Transform für Validierungsdaten
-
-# Laden der Daten in batches unter Benutzung aller CPU-Threads
-train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-val_loader   = DataLoader(val_data,   batch_size=batch_size, shuffle=False)
-
-# Temp CNN-Modell für die Klassifikation von Hase/Kein-Hase
 class SimpleCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes=2):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(3, 16, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2)
         )
         self.fc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(64 * 28 * 28, 128), nn.ReLU(),
-            nn.Linear(128, 2)  # 2 classes
+            nn.Linear(128, num_classes)
         )
 
     def forward(self, x):
         x = self.conv(x)
         return self.fc(x)
+    
+def prepare_data_loaders(data_dir, train_transform, val_transform, train_split=0.8):
+    dataset = datasets.ImageFolder(data_dir, transform=train_transform)
+    train_size = int(train_split * len(dataset))
+    val_size = len(dataset) - train_size
+    train_data, val_data = random_split(dataset, [train_size, val_size])
+    val_data.dataset.transform = val_transform
 
-# Initialisierung des Modells und Verschiebung auf das gewählte Gerät (GPU/CPU)
-model = SimpleCNN().to(device)
+    train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-best_acc = 0
-train_losses = []
-train_accuracies = []
+    return dataset, train_loader, val_loader
 
-early_stopping = EarlyStopper(patience=5, delta=0.2)
+def train_model(model, train_loader, val_loader, device, patience, dataset):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    early_stopper = EarlyStopper(patience=patience)
 
-for epoch in range(epochs):
-    model.train()
-    total, correct = 0, 0
+    history = {"train_loss": [], "train_acc": [], "val_acc": []}
 
-    for xb, yb in train_loader:
-        xb, yb = xb.to(device), yb.to(device)
-        preds = model(xb)
-        loss = criterion(preds, yb)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        correct += (preds.argmax(1) == yb).sum().item()
-        total += yb.size(0)
-    epoch_loss = loss.item()
-    epoch_accuracy = correct / total
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.4f}")
-    train_losses.append(epoch_loss)
-    train_accuracies.append(epoch_accuracy)
-    train_acc = correct / total
-
-    # Validation
-    model.eval()
-    val_total, val_correct = 0, 0
-    with torch.no_grad():
-        for xb, yb in val_loader:
+    best_acc = 0.0
+    for epoch in range(1, EPOCHS + 1):
+        model.train()
+        total, correct, running_loss = 0, 0, 0.0
+        for xb, yb in train_loader:
             xb, yb = xb.to(device), yb.to(device)
+            optimizer.zero_grad()
             preds = model(xb)
-            val_correct += (preds.argmax(1) == yb).sum().item()
-            val_total += yb.size(0)
-    val_acc = val_correct / val_total
+            loss = criterion(preds, yb)
+            loss.backward()
+            optimizer.step()
 
-    print(f"Epoch {epoch+1}: Train Acc={train_acc:.3f}, Val Acc={val_acc:.3f}")
+            running_loss += loss.item()
+            correct += (preds.argmax(1) == yb).sum().item()
+            total += yb.size(0)
 
-    # Early stopping check
-    if early_stopping.early_stop(epoch_loss):
-        print("Early stopping triggered")
-        break
+        train_loss = running_loss / len(train_loader)
+        train_acc = correct / total
+        val_acc, val_loss, _, _ = evaluate_model(model, val_loader, device, criterion)
 
-    if val_acc > best_acc:
-        best_acc = val_acc
-        torch.save(model.state_dict(), "best_model.pth")
+        history["train_loss"].append(train_loss)
+        history["train_acc"].append(train_acc)
+        history["val_acc"].append(val_acc)
 
-    # Laden des besten Modells
-y_true = []
-y_pred = []
-eval_loss = 0.0
-criterion = torch.nn.CrossEntropyLoss()  # or same as used during training
+        print(f"Epoch {epoch}/{EPOCHS}: Train loss={train_loss:.4f}, Train acc={train_acc:.4f}, Val acc={val_acc:.4f}")
 
-with torch.no_grad():
-    for images, labels in val_loader:
-        images = images.to(device)
-        labels = labels.to(device)
+        if early_stopper.early_stop(val_loss):
+            print("Early stopping triggered")
+            break
 
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        eval_loss += loss.item()
+        if val_acc > best_acc:
+            best_acc = val_acc
+            #torch.save(model.state_dict(), os.path.join(doc_dir, "best_model.pth"))
 
-        _, preds = torch.max(outputs, 1)
+            acc, val_loss, y_true, y_pred = evaluate_model(model, val_loader, device, nn.CrossEntropyLoss())
+    report = classification_report(y_true, y_pred, target_names=dataset.classes)
+    conf_mat = confusion_matrix(y_true, y_pred)
 
-        y_true.extend(labels.cpu().numpy())
-        y_pred.extend(preds.cpu().numpy())
+    # Plot & save
+    plot_metrics(history, doc_dir, current_date)
 
-# Step 3: Metrics
-accuracy = accuracy_score(y_true, y_pred)
-conf_matrix = confusion_matrix(y_true, y_pred)
-report = classification_report(y_true, y_pred, target_names=["no rabbit", "rabbit"])
+    hyperparams = {
+        "resize": RESIZE,
+        "augmentation": AUGMENTATION,
+        "normalization": NORMLIZATION,
+        "epochs": EPOCHS,
+        "learning_rate": LEARNING_RATE,
+        "batch_size": BATCH_SIZE
+    }
+    save_results(model, dataset, history, report, conf_mat, hyperparams)
 
-print(f"Test Accuracy: {accuracy:.4f}")
-print(f"Test Loss: {eval_loss / len(val_loader):.4f}")
-print("Classification Report:\n", report)
+    return model, history, best_acc
 
-# Step 4: Plot Confusion Matrix
-plt.figure(figsize=(6, 5))
-sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues",
-            xticklabels=["no rabbit", "rabbit"],
-            yticklabels=["no rabbit", "rabbit"])
-plt.xlabel("Predicted")
-plt.ylabel("Actual")
-plt.title("Confusion Matrix")
-plt.savefig(os.path.join(doc_dir, f"confusion_matrix_{current_date}.png"))
-plt.show()
+def evaluate_model(model, data_loader, device, criterion=None):
+    model.eval()
+    total, correct, loss_sum = 0, 0, 0.0
+    all_preds, all_labels = [], []
 
-# Step 5: Plot Train Loss and Accuracy
-epochs = range(1, len(train_losses) + 1)
+    with torch.no_grad():
+        for xb, yb in data_loader:
+            xb, yb = xb.to(device), yb.to(device)
+            outputs = model(xb)
+            if criterion:
+                loss_sum += criterion(outputs, yb).item()
+            preds = outputs.argmax(1)
+            correct += (preds == yb).sum().item()
+            total += yb.size(0)
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(yb.cpu().tolist())
 
-plt.figure(figsize=(12, 5))
+    acc = correct / total
+    avg_loss = loss_sum / len(data_loader) if criterion else None
+    return acc, avg_loss, all_labels, all_preds
 
-# Loss Plot
-plt.subplot(1, 2, 1)
-plt.plot(epochs, train_losses, label="Train Loss", color="red")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Training Loss over Epochs")
-plt.grid(True)
+def plot_metrics(history, doc_dir, current_date):
+    epochs = range(1, len(history["train_loss"]) + 1)
+    plt.figure(figsize=(12, 5))
+    # Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, history["train_loss"], label="Train Loss")
+    plt.title("Training Loss")
+    plt.xlabel("Epoch")
+    plt.grid(True)
 
-# Accuracy Plot
-plt.subplot(1, 2, 2)
-plt.plot(epochs, train_accuracies, label="Train Accuracy", color="blue")
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
-plt.title("Training Accuracy over Epochs")
-plt.grid(True)
-plt.savefig(os.path.join(doc_dir, f"train_loss_accuracy_{current_date}.png"))
-plt.tight_layout()
-plt.show()
+    # Accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, history["train_acc"], label="Train Acc")
+    plt.plot(epochs, history["val_acc"], label="Val Acc")
+    plt.title("Accuracy")
+    plt.xlabel("Epoch")
+    plt.legend()
+    plt.grid(True)
 
-print(f"Fertig. Best Validation Accuracy: {best_acc:.3f}")
-
-
-
-os.chdir(doc_dir)
-
-
-# Speichern der Hyperparameter und Modellparameter in einer JSON-Datei
-hyperparams = {
-    "resize": resize,
-    "augmentation": augmentation,
-    "normalization": normlization,
-    "epochs": 15,  
-    "learning_rate": learning_rate,
-    "batch_size": batch_size,
-    "cnn_model": str(model)
-}
-results = {
-    "dataset_size": len(dataset),
-    "best_validation_accuracy": best_acc,
-    "train_losses": train_losses,
-    "train_accuracies": train_accuracies,
-    "classification_report": report,
-    "confusion_matrix": conf_matrix.tolist(),
-    "test_accuracy": accuracy,
-    "test_loss": eval_loss / len(val_loader)
-}
+    plt.tight_layout()
+    plt.savefig(os.path.join(doc_dir, f"metrics_{current_date}.png"))
+    plt.show()
 
 
-with open(f"training_results_{current_date}.json", "w") as f:
-    json.dump({"hyperparameters": hyperparams, "results": results}, f, indent=4)
+def save_results(model,dataset, history, classification, conf_matrix, hyperparams):
+    results = {
+        "dataset_size": len(dataset),
+        "history": history,
+        "classification_report": classification,
+        "confusion_matrix": conf_matrix.tolist()
+    }
+    data = {"hyperparameters": hyperparams, "results": results}
+    with open(os.path.join(doc_dir, f"results_{current_date}.json"), 'w') as f:
+        json.dump(data, f, indent=4)
 
-# Speichern der Modellparameter (Gewichte)
-torch.save(model.state_dict(), f"final_model_{current_date}.pth")
+    torch.save(model.state_dict(), os.path.join(doc_dir, f"final_model_{current_date}.pth"))
 
+def find_latest_model(model_dir):
+    pattern = re.compile(r"final_model_(\d{8}_\d{4})\.pth")
+    latest_time = None
+    latest_file = None
+
+    for file in os.listdir(model_dir):
+        match = pattern.match(file)
+        if match:
+            timestamp = match.group(1)
+            try:
+                file_time = datetime.strptime(timestamp, "%Y%m%d_%H%M")
+                if latest_time is None or file_time > latest_time:
+                    latest_time = file_time
+                    latest_file = file
+            except ValueError:
+                continue
+
+    return os.path.join(model_dir, latest_file) if latest_file else None
+
+def load_latest_model(model_dir, device=None):
+    model_path = find_latest_model(model_dir)
+    if not model_path:
+        raise FileNotFoundError("No valid model file found.")
+
+    print(f"Loading model: {model_path}")
+    model = SimpleCNN()
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
+
+def main():
+    patience = 5
+
+    # Transforms and data
+    train_t, val_t = get_transforms()
+    data_dir = os.path.join(base_dir, "..", "..", "data", "train")
+    dataset, train_loader, val_loader = prepare_data_loaders(data_dir, train_t, val_t)
+
+    # Model
+    model = SimpleCNN(num_classes=len(dataset.classes)).to(device)
+
+    while True:
+        try:
+            interface = CNNInterface(model, dataset.classes, device, lambda: train_model(model, train_loader, val_loader, device, patience, dataset), val_t)
+            interface.launch()
+        except KeyboardInterrupt:
+            print("Stopping the programm.")
+            break
+
+
+
+
+if __name__ == "__main__":
+    main()
 
