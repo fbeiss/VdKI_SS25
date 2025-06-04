@@ -1,0 +1,75 @@
+{
+    "hyperparameters": {
+        "resize": [
+            224,
+            224
+        ],
+        "augmentation": {
+            "horizontal_flip": 0.5,
+            "vertical_flip": 0.2,
+            "rotation": 30,
+            "color_jitter": {
+                "brightness": 0.3,
+                "contrast": 0.3,
+                "saturation": 0.3,
+                "hue": 0.1
+            },
+            "grayscale": 0.1
+        },
+        "normalization": {
+            "mean": [
+                0.5131,
+                0.4867,
+                0.4275
+            ],
+            "std": [
+                0.229,
+                0.224,
+                0.225
+            ]
+        },
+        "epochs": 25,
+        "learning_rate": 0.001,
+        "batch_size": 32
+    },
+    "results": {
+        "dataset_size": 3248,
+        "history": {
+            "train_loss": [
+                0.2424488769071858,
+                0.08302185891150701,
+                0.0644176775907598,
+                0.05225445743559337,
+                0.042333469669357304,
+                0.03937246172870623
+            ],
+            "train_acc": [
+                0.8999230177059276,
+                0.9811393379522709,
+                0.9799846035411856,
+                0.9838337182448037,
+                0.9896073903002309,
+                0.9903772132409546
+            ],
+            "val_acc": [
+                0.9846153846153847,
+                0.9892307692307692,
+                0.9876923076923076,
+                0.9892307692307692,
+                0.9907692307692307,
+                0.9907692307692307
+            ]
+        },
+        "classification_report": "              precision    recall  f1-score   support\n\n      andere       0.99      0.97      0.98       153\n   kaninchen       0.99      1.00      0.99       497\n\n    accuracy                           0.99       650\n   macro avg       0.99      0.98      0.99       650\nweighted avg       0.99      0.99      0.99       650\n",
+        "confusion_matrix": [
+            [
+                148,
+                5
+            ],
+            [
+                1,
+                496
+            ]
+        ]
+    }
+}
