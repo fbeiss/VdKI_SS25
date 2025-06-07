@@ -105,27 +105,24 @@ class SimpleCNN(nn.Module):
         x = self.conv(x)
         return self.fc(x)
     
-def prepare_data_loaders(data_dir, train_transform, val_transform, train_split=0.8, val_test_split=0.5):
-    dataset = datasets.ImageFolder(data_dir, transform=train_transform)
-    train_size = int(train_split * len(dataset))
-    val_size = len(dataset) - train_size
-    test_size = int(val_size * val_test_split)
-    val_size -= test_size
-    print(f"Dataset size: {len(dataset)}, Train size: {train_size}, Val size: {val_size}, Test size: {test_size}")
-    train_data, val_data, test_val = random_split(dataset, [train_size, val_size, test_size], generator=torch.Generator().manual_seed(42))
-    val_data.dataset.transform = val_transform
-    test_val.dataset.transform = val_transform
-    print(f"Train data: {len(train_data)}, Val data: {len(val_data)}, Test data: {len(test_val)}")
+def prepare_data_loaders(data_dir, train_transform, val_transform):
+    train_data = datasets.ImageFolder(os.path.join(data_dir, "train"), transform=train_transform)
+    val_data = datasets.ImageFolder(os.path.join(data_dir, "val"), transform=val_transform)
+    test_data = datasets.ImageFolder(os.path.join(data_dir, "test"), transform=val_transform)
+
+    classes = train_data.classes
+    print(f"Classes: {classes}")
+    print(f"Train data: {len(train_data)}, Val data: {len(val_data)}, Test data: {len(test_data)}")
 
     train_loader = DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_data, batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(test_val, batch_size=BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False)
     print(f"Train loader: {len(train_loader)}, Val loader: {len(val_loader)}, Test loader: {len(test_loader)}")
 
-    return dataset, train_loader, val_loader, test_loader
+    return classes,train_loader, val_loader, test_loader
 #dsd
 
-def train_model(model, train_loader, val_loader, device, patience, dataset):
+def train_model(model, train_loader, val_loader, device, patience, classes):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     early_stopper = EarlyStopper(patience=patience)
@@ -168,7 +165,7 @@ def train_model(model, train_loader, val_loader, device, patience, dataset):
             #torch.save(model.state_dict(), os.path.join(doc_dir, "best_model.pth"))
 
     acc, val_loss, y_true, y_pred = evaluate_model(model, val_loader, device, nn.CrossEntropyLoss())
-    report = classification_report(y_true, y_pred, target_names=dataset.classes)
+    report = classification_report(y_true, y_pred, target_names=classes)
     conf_mat = confusion_matrix(y_true, y_pred)
     test_acc =  test_model(model, val_loader, device)
     print("Validation Accuracy:", acc)
@@ -189,7 +186,7 @@ def train_model(model, train_loader, val_loader, device, patience, dataset):
         "learning_rate": LEARNING_RATE,
         "batch_size": BATCH_SIZE
     }
-    save_results(model, dataset, history, report, conf_mat, hyperparams)
+    save_results(model, history, report, conf_mat, hyperparams)
 
     return model, history, best_acc
 
@@ -261,9 +258,8 @@ def test_model(model, test_loader, device):
 
 
 
-def save_results(model,dataset, history, classification, conf_matrix, hyperparams):
+def save_results(model, history, classification, conf_matrix, hyperparams):
     results = {
-        "dataset_size": len(dataset),
         "history": history,
         "classification_report": classification,
         "confusion_matrix": conf_matrix.tolist()
@@ -311,15 +307,15 @@ def main():
 
     # Transforms and data
     train_t, val_t = get_transforms()
-    data_dir = os.path.join(base_dir, "..", "..", "data", "train")
-    dataset, train_loader, val_loader, test_loader = prepare_data_loaders(data_dir, train_t, val_t)
-
+    data_dir = os.path.join(base_dir, "..", "..", "data")
+    classes,train_loader, val_loader, test_loader = prepare_data_loaders(data_dir, train_t, val_t)
+    print(classes)
     # Model
-    model = SimpleCNN(num_classes=len(dataset.classes)).to(device)
+    model = SimpleCNN(num_classes=len(classes)).to(device)
 
     while True:
         try:
-            interface = CNNInterface(model, dataset.classes, device, lambda: train_model(model, train_loader, val_loader, device, patience, dataset), val_t)
+            interface = CNNInterface(model, classes, device, lambda: train_model(model, train_loader, val_loader, device, patience, classes), val_t)
             interface.launch()
         except KeyboardInterrupt:
             print("Stopping the programm.")
